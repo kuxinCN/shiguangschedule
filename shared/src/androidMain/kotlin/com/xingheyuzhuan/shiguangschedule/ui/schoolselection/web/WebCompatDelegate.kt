@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.net.http.SslError
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -14,6 +16,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
@@ -31,6 +34,10 @@ class WebCompatDelegate(private val webView: WebView) {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, JS_INTERCEPT_POST, setOf("*"))
         }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(webView.settings, emptySet())
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -38,13 +45,15 @@ class WebCompatDelegate(private val webView: WebView) {
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            databaseEnabled = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            javaScriptCanOpenWindowsAutomatically = true
 
             if (isDesktopMode) {
                 userAgentString = DESKTOP_USER_AGENT
                 layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
-                useWideViewPort = false
-                loadWithOverviewMode = false
+                useWideViewPort = true
+                loadWithOverviewMode = true
             } else {
                 userAgentString = defaultUserAgent
                 layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
@@ -120,7 +129,75 @@ class WebCompatDelegate(private val webView: WebView) {
                 onProgress(newProgress)
                 original.onProgressChanged(view, newProgress)
             }
+
             override fun onReceivedTitle(v: WebView?, t: String?) = original.onReceivedTitle(v, t)
+
+            override fun onJsAlert(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                val ctx = view?.context
+                if (ctx != null && !message.isNullOrBlank()) {
+                    try {
+                        android.app.AlertDialog.Builder(ctx)
+                            .setTitle("提示")
+                            .setMessage(message)
+                            .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                            .setOnCancelListener { result?.confirm() }
+                            .setCancelable(false)
+                            .show()
+                        return true
+                    } catch (e: Exception) {
+                        try {
+                            android.widget.Toast.makeText(ctx, message, android.widget.Toast.LENGTH_LONG).show()
+                        } catch (_: Exception) {}
+                        result?.confirm()
+                        return true
+                    }
+                }
+                result?.confirm()
+                return true
+            }
+
+            override fun onJsConfirm(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                val ctx = view?.context
+                if (ctx != null && !message.isNullOrBlank()) {
+                    try {
+                        android.app.AlertDialog.Builder(ctx)
+                            .setTitle("提示")
+                            .setMessage(message)
+                            .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                            .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                            .setOnCancelListener { result?.cancel() }
+                            .setCancelable(false)
+                            .show()
+                        return true
+                    } catch (e: Exception) {
+                        result?.confirm()
+                        return true
+                    }
+                }
+                result?.confirm()
+                return true
+            }
+
+            override fun onJsPrompt(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                defaultValue: String?,
+                result: JsPromptResult?
+            ): Boolean {
+                result?.confirm(defaultValue ?: "")
+                return true
+            }
         }
     }
 }

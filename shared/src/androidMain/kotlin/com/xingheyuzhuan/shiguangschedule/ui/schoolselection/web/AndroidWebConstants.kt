@@ -1,7 +1,7 @@
 package com.xingheyuzhuan.shiguangschedule.ui.schoolselection.web
 
 /**
- * Android 平台专属：拦截 XHR, Fetch 和 Form POST 请求的 JS 脚本
+ * Android 平台专属：拦截 XHR 和 Fetch POST 请求的 JS 脚本
  */
 val JS_INTERCEPT_POST = """
 (function() {
@@ -153,36 +153,6 @@ val JS_INTERCEPT_POST = """
             }
         };
     }
-
-    // --- 3. Traditional Form Submit Interception ---
-    document.addEventListener('submit', function(e) {
-        try {
-            var form = e.target;
-            if (!form || !form.tagName || form.tagName.toLowerCase() !== 'form') return;
-            if (!form.method || form.method.toLowerCase() !== 'post') return;
-
-            if (form.querySelector && form.querySelector('input[type="file"]')) return;
-
-            var id = 'form_' + Date.now() + '_' + Math.random().toString(36).substr(2);
-            var formData = new FormData(form);
-            
-            var submitter = e.submitter || document.activeElement;
-            if (submitter && submitter.form === form && submitter.name) {
-                formData.append(submitter.name, submitter.value);
-            }
-
-            if (window.URLSearchParams) {
-                var params = new URLSearchParams(formData);
-                register(id, params.toString(), 'application/x-www-form-urlencoded');
-
-                var action = form.getAttribute('action') || window.location.href;
-                var separator = action.indexOf('?') !== -1 ? '&' : '?';
-                form.setAttribute('action', action + separator + requestIdParam + '=' + id);
-            }
-        } catch(err) {
-            console.error("Form submit intercept error:", err);
-        }
-    }, true);
 
     console.log('Unified X-Requested-With interceptor active');
 })();

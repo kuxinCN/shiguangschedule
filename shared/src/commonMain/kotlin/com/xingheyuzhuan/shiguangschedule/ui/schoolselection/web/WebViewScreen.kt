@@ -126,7 +126,7 @@ fun WebViewScreen(
     var pageTitle by remember { mutableStateOf(if (startedEmpty) titleEnterUrl else titleLoading) }
 
     var expanded by remember { mutableStateOf(false) }
-    var isDesktopMode by remember { mutableStateOf(false) }
+    var isDesktopMode by remember { mutableStateOf(true) }
     var isEditingUrl by remember { mutableStateOf(startedEmpty) }
     var isDevToolsEnabled by remember { mutableStateOf(false) }
     var showCourseTablePicker by remember { mutableStateOf(false) }

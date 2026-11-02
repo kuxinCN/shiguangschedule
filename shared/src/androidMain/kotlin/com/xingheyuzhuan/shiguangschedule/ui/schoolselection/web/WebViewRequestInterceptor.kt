@@ -25,19 +25,10 @@ import java.util.Collections
 
 /**
  * WebView 请求拦截器（电脑模式专用）
- * 用于过滤特定指纹 Header 并接管 XHR/Fetch POST 数据流
+ * 用于接管特定 XHR/Fetch POST 数据流
  */
 class WebViewRequestInterceptor {
     companion object {
-        private val ktorClientNoRedirects = HttpClient {
-            followRedirects = false
-            install(HttpTimeout) {
-                connectTimeoutMillis = 30_000
-                requestTimeoutMillis = 60_000
-                socketTimeoutMillis = 60_000
-            }
-        }
-
         private val ktorClientWithRedirects = HttpClient {
             followRedirects = true
             install(HttpTimeout) {
@@ -69,9 +60,10 @@ class WebViewRequestInterceptor {
         val requestId = requestIdHeader ?: requestIdParam
 
         // 2. 关键过滤逻辑：
-        // 如果既不是 MainFrame (主网页导航)，也没有带 POST ID 标，
-        // 说明这只是网页内部的普通 GET/AJAX/图片/JS 资源请求，直接放行给 WebView 原生网络栈！
-        if (!request.isForMainFrame && requestId == null) {
+        // 只有注册了 Post ID 的特定 XHR/Fetch 请求才由 Ktor 代理。
+        // 主框架页面导航、302 重定向、原生表单提交及常规静态资源均放行给 WebView 原生网络栈，
+        // 确保 Cookie 状态机强一致性与 Session 登录状态不丢失！
+        if (requestId == null) {
             return null
         }
 
@@ -90,18 +82,16 @@ class WebViewRequestInterceptor {
             rawUrl
         }
 
-        val registeredData = requestId?.let { postBodyRegistry.remove(it) }
+        val registeredData = postBodyRegistry.remove(requestId)
 
         // 如果不是 GET 且没有获取到 Body 数据，放回原生处理
         if (request.method.uppercase() != "GET" && registeredData == null) {
             return null
         }
 
-        val client = if (request.isForMainFrame) ktorClientNoRedirects else ktorClientWithRedirects
-
         try {
             return runBlocking {
-                val response = client.request {
+                val response = ktorClientWithRedirects.request {
                     this.url.takeFrom(url)
                     this.method = HttpMethod.parse(request.method)
 
@@ -117,9 +107,11 @@ class WebViewRequestInterceptor {
 
                     headers {
                         request.requestHeaders.forEach { (key, value) ->
-                            // 过滤容易被服务端反爬系统标记为移动端 WebView 的 Header
+                            // 过滤指纹 Header 并剔除 Content-Length/Host 避免 Ktor 冲突
                             if (!key.equals("X-Requested-With", ignoreCase = true) &&
-                                !key.equals("X-WebView-Post-Id", ignoreCase = true)) {
+                                !key.equals("X-WebView-Post-Id", ignoreCase = true) &&
+                                !key.equals("Content-Length", ignoreCase = true) &&
+                                !key.equals("Host", ignoreCase = true)) {
                                 append(key, value)
                             }
                         }
@@ -139,22 +131,19 @@ class WebViewRequestInterceptor {
 
                 val statusCode = response.status.value
 
-                // WebView 无法原生解析 3xx 响应，主框架需通过 JS 跳转替代
                 if (statusCode in 300..399) {
-                    if (request.isForMainFrame) {
-                        val location = response.headers[HttpHeaders.Location]
-                        if (location != null) {
-                            val absoluteLocation = resolveAbsoluteUrl(url, location)
-                            val html = "<html><script>window.location.replace('$absoluteLocation');</script></html>"
-                            return@runBlocking WebResourceResponse(
-                                "text/html",
-                                "UTF-8",
-                                200,
-                                "OK",
-                                mapOf("Cache-Control" to "no-cache"),
-                                html.byteInputStream()
-                            )
-                        }
+                    val location = response.headers[HttpHeaders.Location]
+                    if (location != null) {
+                        val absoluteLocation = resolveAbsoluteUrl(url, location)
+                        val html = "<html><script>window.location.replace('$absoluteLocation');</script></html>"
+                        return@runBlocking WebResourceResponse(
+                            "text/html",
+                            "UTF-8",
+                            200,
+                            "OK",
+                            mapOf("Cache-Control" to "no-cache"),
+                            html.byteInputStream()
+                        )
                     }
                     return@runBlocking null
                 }
