@@ -1,6 +1,7 @@
 package com.xingheyuzhuan.shiguangschedule.ui.schedule
 
 import androidx.lifecycle.ViewModel
+import com.xingheyuzhuan.shiguangschedule.Destination
 import androidx.lifecycle.viewModelScope
 import com.xingheyuzhuan.shiguangschedule.data.db.main.CourseWithWeeks
 import com.xingheyuzhuan.shiguangschedule.data.model.ScheduleGridStyle
