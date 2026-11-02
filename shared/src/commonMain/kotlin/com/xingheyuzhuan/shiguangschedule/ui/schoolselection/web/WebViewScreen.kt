@@ -95,6 +95,9 @@ fun WebViewScreen(
     onBack: () -> Unit,
     initialUrl: String?,
     assetJsPath: String?,
+    schoolName: String? = null,
+    targetTableId: String? = null,
+    autoExecute: Boolean = false,
     viewModel: WebViewModel = koinViewModel()
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -328,7 +331,11 @@ fun WebViewScreen(
                         Button(
                             onClick = {
                                 if (assetJsPath != null) {
-                                    showCourseTablePicker = true
+                                    if (targetTableId != null) {
+                                        executeImportScript(targetTableId)
+                                    } else {
+                                        showCourseTablePicker = true
+                                    }
                                 } else {
                                     ToastManager.show(toastNoManualImport)
                                 }
@@ -379,32 +386,52 @@ fun WebViewScreen(
                 )
             }
 
+            val executeImportScript: (String) -> Unit = { tableId ->
+                try {
+                    val fileSystem = viewModel.fileSystem
+                    val jsFilePath = viewModel.filesDir / "repo" / "schools" / "resources" / assetJsPath!!
+
+                    if (fileSystem.exists(jsFilePath)) {
+                        val jsCode = fileSystem.read(jsFilePath) { readUtf8() }
+                        bridgeHandler.setImportTableId(tableId)
+
+                        val fullJsScript = "window.currentTableId = '$tableId';\n$jsCode"
+                        webViewController.executeScript(fullJsScript)
+
+                        if (!schoolName.isNullOrBlank()) {
+                            viewModel.saveSyncBinding(
+                                schoolName = schoolName,
+                                adapterJsPath = assetJsPath,
+                                importUrl = initialUrl ?: currentUrl,
+                                tableId = tableId
+                            )
+                        }
+
+                        ToastManager.show(toastExecutingImport)
+                    } else {
+                        ToastManager.show(toastImportNotFoundFmt.replace("%s", jsFilePath.toString()))
+                    }
+                } catch (e: Exception) {
+                    ToastManager.show(toastLoadImportFailedFmt.replace("%s", e.message ?: ""))
+                }
+            }
+
+            var hasAutoExecuted by remember { mutableStateOf(false) }
+            LaunchedEffect(loadingProgress) {
+                if (autoExecute && targetTableId != null && assetJsPath != null && loadingProgress >= 1.0f && !hasAutoExecuted) {
+                    kotlinx.coroutines.delay(600)
+                    hasAutoExecuted = true
+                    executeImportScript(targetTableId)
+                }
+            }
+
             if (showCourseTablePicker && assetJsPath != null) {
                 CourseTablePickerDialog(
                     title = stringResource(Res.string.dialog_title_select_table_for_import),
                     onDismissRequest = { showCourseTablePicker = false },
                     onTableSelected = { selectedTable ->
                         showCourseTablePicker = false
-                        val tableId = selectedTable.id
-
-                        try {
-                            val fileSystem = viewModel.fileSystem
-                            val jsFilePath = viewModel.filesDir / "repo" / "schools" / "resources" / assetJsPath
-
-                            if (fileSystem.exists(jsFilePath)) {
-                                val jsCode = fileSystem.read(jsFilePath) { readUtf8() }
-                                bridgeHandler.setImportTableId(tableId)
-
-                                val fullJsScript = "window.currentTableId = '$tableId';\n$jsCode"
-                                webViewController.executeScript(fullJsScript)
-
-                                ToastManager.show(toastExecutingImport)
-                            } else {
-                                ToastManager.show(toastImportNotFoundFmt.replace("%s", jsFilePath.toString()))
-                            }
-                        } catch (e: Exception) {
-                            ToastManager.show(toastLoadImportFailedFmt.replace("%s", e.message ?: ""))
-                        }
+                        executeImportScript(selectedTable.id)
                     }
                 )
             }

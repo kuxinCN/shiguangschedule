@@ -234,7 +234,13 @@ fun ScreenContent(
             onNavigate, onBack, targetDest.schoolId, targetDest.schoolName, targetDest.categoryNumber, targetDest.resourceFolder
         )
         is Destination.WebView -> WebViewScreen(
-            onNavigate, onBack, targetDest.initialUrl, targetDest.assetJsPath
+            onNavigate,
+            onBack,
+            targetDest.initialUrl,
+            targetDest.assetJsPath,
+            targetDest.schoolName,
+            targetDest.targetTableId,
+            targetDest.autoExecute
         )
         is Destination.AddEditCourse -> AddEditCourseScreen(
             onBack, targetDest.courseId

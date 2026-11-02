@@ -155,7 +155,8 @@ fun AdapterSelectionScreen(
                                     onNavigate(
                                         Destination.WebView(
                                             initialUrl = initialUrl,
-                                            assetJsPath = assetJsPath
+                                            assetJsPath = assetJsPath,
+                                            schoolName = schoolName
                                         )
                                     )
                                 }

@@ -63,7 +63,10 @@ sealed interface Destination : NavKey {
     @Serializable
     data class WebView(
         val initialUrl: String? = "about:blank",
-        val assetJsPath: String? = null
+        val assetJsPath: String? = null,
+        val schoolName: String? = null,
+        val targetTableId: String? = null,
+        val autoExecute: Boolean = false
     ) : Destination
 
     @Serializable

@@ -78,6 +78,7 @@ import shiguangschedule.shared.generated.resources.arrow_drop_down_24px
 import shiguangschedule.shared.generated.resources.format_week_display
 import shiguangschedule.shared.generated.resources.snackbar_add_course_within_semester
 import shiguangschedule.shared.generated.resources.swap_horiz_24px
+import shiguangschedule.shared.generated.resources.sync_alt_24px
 import shiguangschedule.shared.generated.resources.title_current_week
 import shiguangschedule.shared.generated.resources.title_semester_not_set
 import shiguangschedule.shared.generated.resources.title_vacation
@@ -240,6 +241,13 @@ fun WeeklyScheduleScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { viewModel.onQuickSyncClick(onNavigate) }) {
+                            Icon(
+                                imageVector = vectorResource(Res.drawable.sync_alt_24px),
+                                contentDescription = "同步教务课表",
+                                tint = customTextColor
+                            )
+                        }
                         IconButton(onClick = { showTableSwitcher = true }) {
                             Icon(
                                 imageVector = vectorResource(Res.drawable.swap_horiz_24px),

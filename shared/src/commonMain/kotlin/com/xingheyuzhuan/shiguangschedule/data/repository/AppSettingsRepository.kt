@@ -361,4 +361,21 @@ class AppSettingsRepository(
         }
         return LocalDate.fromEpochDays(date.toEpochDays() - daysToSubtract)
     }
+
+    /**
+     * 保存最近一次成功导入教务课表所使用的元数据，用于后续一键快速同步。
+     */
+    suspend fun saveLastSyncInfo(
+        schoolName: String,
+        adapterJsPath: String,
+        importUrl: String,
+        targetTableId: String
+    ) {
+        dataStore.edit { prefs ->
+            if (schoolName.isNotBlank()) prefs[AppSettingsModel.KEY_SYNC_SCHOOL_NAME] = schoolName
+            if (adapterJsPath.isNotBlank()) prefs[AppSettingsModel.KEY_SYNC_ADAPTER_JS_PATH] = adapterJsPath
+            if (importUrl.isNotBlank()) prefs[AppSettingsModel.KEY_SYNC_IMPORT_URL] = importUrl
+            if (targetTableId.isNotBlank()) prefs[AppSettingsModel.KEY_SYNC_TARGET_TABLE_ID] = targetTableId
+        }
+    }
 }

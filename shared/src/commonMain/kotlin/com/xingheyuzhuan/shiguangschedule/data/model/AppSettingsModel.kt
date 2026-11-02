@@ -157,6 +157,18 @@ data class AppSettingsModel(
 
     /** 开发者功能总开关（默认关闭） */
     val developerModeEnabled: Boolean = false,
+
+    /** 快速同步教务：关联学校名称 */
+    val syncSchoolName: String = "",
+
+    /** 快速同步教务：关联适配器 JS 相对路径 */
+    val syncAdapterJsPath: String = "",
+
+    /** 快速同步教务：教务系统入口 URL */
+    val syncImportUrl: String = "",
+
+    /** 快速同步教务：绑定的目标课表 ID */
+    val syncTargetTableId: String = "",
 ) {
     /**
      * 将 DataStore 的 Key 定义在伴生对象中。
@@ -196,6 +208,14 @@ data class AppSettingsModel(
         val KEY_BACKGROUND_IMAGE_PATH_DARK = stringPreferencesKey("background_image_path_dark")
         /** 开发者模式总开关的存储键 */
         val KEY_DEVELOPER_MODE_ENABLED = booleanPreferencesKey("developer_mode_enabled")
+        /** 快速同步教务学校名称的存储键 */
+        val KEY_SYNC_SCHOOL_NAME = stringPreferencesKey("sync_school_name")
+        /** 快速同步教务适配器 JS 相对路径的存储键 */
+        val KEY_SYNC_ADAPTER_JS_PATH = stringPreferencesKey("sync_adapter_js_path")
+        /** 快速同步教务入口 URL 的存储键 */
+        val KEY_SYNC_IMPORT_URL = stringPreferencesKey("sync_import_url")
+        /** 快速同步教务目标课表 ID 的存储键 */
+        val KEY_SYNC_TARGET_TABLE_ID = stringPreferencesKey("sync_target_table_id")
 
         /**
          * 允许备份的 DataStore 键集合白名单。
@@ -245,6 +265,10 @@ data class AppSettingsModel(
                     dark = prefs[KEY_BACKGROUND_IMAGE_PATH_DARK] ?: d.backgroundImagePath.dark
                 ),
                 developerModeEnabled = prefs[KEY_DEVELOPER_MODE_ENABLED] ?: d.developerModeEnabled,
+                syncSchoolName = prefs[KEY_SYNC_SCHOOL_NAME] ?: d.syncSchoolName,
+                syncAdapterJsPath = prefs[KEY_SYNC_ADAPTER_JS_PATH] ?: d.syncAdapterJsPath,
+                syncImportUrl = prefs[KEY_SYNC_IMPORT_URL] ?: d.syncImportUrl,
+                syncTargetTableId = prefs[KEY_SYNC_TARGET_TABLE_ID] ?: d.syncTargetTableId,
             )
         }
     }

@@ -2,6 +2,8 @@ name: CI Build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main, dev ]
 
 jobs:
   prepare-resources:
@@ -10,8 +12,15 @@ jobs:
       - name: 检出代码 (Checkout)
         uses: actions/checkout@v4
 
-      - name: 清理索引和资源目标目录
+      - name: 备份本地代码库内置的学校适配器与索引
         run: |
+          mkdir -p /tmp/local_school_backup
+          if [ -d "shared/assets/offline_repo/schools/resources" ]; then
+            cp -r shared/assets/offline_repo/schools/resources /tmp/local_school_backup/ || true
+          fi
+          if [ -f "shared/assets/offline_repo/index/school_index.pb" ]; then
+            cp shared/assets/offline_repo/index/school_index.pb /tmp/local_school_backup/ || true
+          fi
           rm -rf shared/assets/offline_repo/index
           rm -rf shared/assets/offline_repo/schools
           mkdir -p shared/assets/offline_repo/index
@@ -57,6 +66,15 @@ jobs:
 
           find $ABS_SCHOOLS_PATH/resources -name "adapters.yaml" -exec rm -f {} \;
           echo "资源克隆和清理完成。"
+
+          if [ -d "/tmp/local_school_backup/resources" ]; then
+            echo "恢复本地内置适配器资源..."
+            cp -rn /tmp/local_school_backup/resources/* $ABS_SCHOOLS_PATH/resources/ 2>/dev/null || cp -r /tmp/local_school_backup/resources/* $ABS_SCHOOLS_PATH/resources/ || true
+          fi
+          if [ -f "/tmp/local_school_backup/school_index.pb" ]; then
+            echo "使用本地更新后的 school_index.pb..."
+            cp /tmp/local_school_backup/school_index.pb shared/assets/offline_repo/index/school_index.pb
+          fi
 
           cd ${{ github.workspace }}
           rm -rf $TEMP_CLONE_DIR
@@ -123,25 +141,29 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: 解码签名密钥
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > androidApp/release.jks
-
-      - name: 构建 Release APK
+      - name: 构建 APK
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file="${{ github.workspace }}/androidApp/release.jks" \
-            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
-            --stacktrace
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > androidApp/release.jks
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="${{ github.workspace }}/androidApp/release.jks" \
+              -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+              -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+              -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
+              --stacktrace
+          else
+            echo "未配置发布签名证书，自动构建可直接安装的 Debug APK..."
+            ./gradlew assembleDebug --stacktrace
+          fi
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-apk
-          path: androidApp/build/outputs/apk/release/*.apk
+          name: app-apk
+          path: |
+            androidApp/build/outputs/apk/release/*.apk
+            androidApp/build/outputs/apk/debug/*.apk
           retention-days: 7
 
   build-desktop:

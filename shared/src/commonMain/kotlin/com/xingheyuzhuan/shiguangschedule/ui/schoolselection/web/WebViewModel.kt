@@ -2,6 +2,7 @@ package com.xingheyuzhuan.shiguangschedule.ui.schoolselection.web
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import com.xingheyuzhuan.shiguangschedule.data.repository.AppSettingsRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,4 +26,10 @@ class WebViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = false
         )
+
+    fun saveSyncBinding(schoolName: String, adapterJsPath: String, importUrl: String, tableId: String) {
+        kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext).launch {
+            appSettingsRepository.saveLastSyncInfo(schoolName, adapterJsPath, importUrl, tableId)
+        }
+    }
 }

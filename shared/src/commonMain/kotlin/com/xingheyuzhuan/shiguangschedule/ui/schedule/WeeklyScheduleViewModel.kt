@@ -452,4 +452,32 @@ class WeeklyScheduleViewModel(
             }
         }
     }
+
+    /**
+     * 快速一键同步教务课表。
+     * 若已绑定教务系统，直接进入自动执行更新；若未绑定，则导航至学校选择页面。
+     */
+    fun onQuickSyncClick(onNavigate: (Destination) -> Unit) {
+        viewModelScope.launch {
+            val settings = appSettingsRepository.getAppSettingsOnce()
+            val syncUrl = settings.syncImportUrl
+            val syncJs = settings.syncAdapterJsPath
+            val syncTableId = settings.syncTargetTableId.ifBlank { settings.currentCourseTableId }
+            val schoolName = settings.syncSchoolName
+
+            if (syncUrl.isNotBlank() && syncJs.isNotBlank()) {
+                onNavigate(
+                    Destination.WebView(
+                        initialUrl = syncUrl,
+                        assetJsPath = syncJs,
+                        schoolName = schoolName,
+                        targetTableId = syncTableId,
+                        autoExecute = true
+                    )
+                )
+            } else {
+                onNavigate(Destination.SchoolSelectionListScreen)
+            }
+        }
+    }
 }
