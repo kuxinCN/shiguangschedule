@@ -67,17 +67,19 @@ jobs:
           find $ABS_SCHOOLS_PATH/resources -name "adapters.yaml" -exec rm -f {} \;
           echo "资源克隆和清理完成。"
 
+          cd ${{ github.workspace }}
+          rm -rf $TEMP_CLONE_DIR
+
           if [ -d "/tmp/local_school_backup/resources" ]; then
             echo "恢复本地内置适配器资源..."
-            cp -rn /tmp/local_school_backup/resources/* $ABS_SCHOOLS_PATH/resources/ 2>/dev/null || cp -r /tmp/local_school_backup/resources/* $ABS_SCHOOLS_PATH/resources/ || true
+            mkdir -p shared/assets/offline_repo/schools/resources
+            cp -r /tmp/local_school_backup/resources/* shared/assets/offline_repo/schools/resources/ 2>/dev/null || true
           fi
           if [ -f "/tmp/local_school_backup/school_index.pb" ]; then
             echo "使用本地更新后的 school_index.pb..."
-            cp /tmp/local_school_backup/school_index.pb shared/assets/offline_repo/index/school_index.pb
+            mkdir -p shared/assets/offline_repo/index
+            cp -f /tmp/local_school_backup/school_index.pb shared/assets/offline_repo/index/school_index.pb
           fi
-
-          cd ${{ github.workspace }}
-          rm -rf $TEMP_CLONE_DIR
 
       - name: 生成贡献者数据 (Contributors)
         run: |
@@ -104,7 +106,6 @@ jobs:
   build-android:
     needs: prepare-resources
     runs-on: ubuntu-latest
-    environment: Release-Signing
     steps:
       - name: 检出代码 (Checkout)
         uses: actions/checkout@v4
