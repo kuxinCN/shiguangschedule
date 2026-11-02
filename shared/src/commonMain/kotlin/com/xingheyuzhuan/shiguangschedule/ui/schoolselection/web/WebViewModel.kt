@@ -28,7 +28,7 @@ class WebViewModel(
         )
 
     fun saveSyncBinding(schoolName: String, adapterJsPath: String, importUrl: String, tableId: String) {
-        kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext).launch {
+        viewModelScope.launch {
             appSettingsRepository.saveLastSyncInfo(schoolName, adapterJsPath, importUrl, tableId)
         }
     }

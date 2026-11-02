@@ -149,6 +149,39 @@ fun WebViewScreen(
         )
     }
 
+    val executeImportScript: (String) -> Unit = { tableId ->
+        try {
+            val fileSystem = viewModel.fileSystem
+            val path = assetJsPath
+            if (path != null) {
+                val jsFilePath = viewModel.filesDir / "repo" / "schools" / "resources" / path
+
+                if (fileSystem.exists(jsFilePath)) {
+                    val jsCode = fileSystem.read(jsFilePath) { readUtf8() }
+                    bridgeHandler.setImportTableId(tableId)
+
+                    val fullJsScript = "window.currentTableId = '$tableId';\n$jsCode"
+                    webViewController.executeScript(fullJsScript)
+
+                    if (!schoolName.isNullOrBlank()) {
+                        viewModel.saveSyncBinding(
+                            schoolName = schoolName,
+                            adapterJsPath = path,
+                            importUrl = initialUrl ?: currentUrl,
+                            tableId = tableId
+                        )
+                    }
+
+                    ToastManager.show(toastExecutingImport)
+                } else {
+                    ToastManager.show(toastImportNotFoundFmt.replace("%s", jsFilePath.toString()))
+                }
+            }
+        } catch (e: Exception) {
+            ToastManager.show(toastLoadImportFailedFmt.replace("%s", e.message ?: ""))
+        }
+    }
+
     val handleBackAction: () -> Unit = {
         if (isEditingUrl) {
             isEditingUrl = false
@@ -386,35 +419,7 @@ fun WebViewScreen(
                 )
             }
 
-            val executeImportScript: (String) -> Unit = { tableId ->
-                try {
-                    val fileSystem = viewModel.fileSystem
-                    val jsFilePath = viewModel.filesDir / "repo" / "schools" / "resources" / assetJsPath!!
 
-                    if (fileSystem.exists(jsFilePath)) {
-                        val jsCode = fileSystem.read(jsFilePath) { readUtf8() }
-                        bridgeHandler.setImportTableId(tableId)
-
-                        val fullJsScript = "window.currentTableId = '$tableId';\n$jsCode"
-                        webViewController.executeScript(fullJsScript)
-
-                        if (!schoolName.isNullOrBlank()) {
-                            viewModel.saveSyncBinding(
-                                schoolName = schoolName,
-                                adapterJsPath = assetJsPath,
-                                importUrl = initialUrl ?: currentUrl,
-                                tableId = tableId
-                            )
-                        }
-
-                        ToastManager.show(toastExecutingImport)
-                    } else {
-                        ToastManager.show(toastImportNotFoundFmt.replace("%s", jsFilePath.toString()))
-                    }
-                } catch (e: Exception) {
-                    ToastManager.show(toastLoadImportFailedFmt.replace("%s", e.message ?: ""))
-                }
-            }
 
             var hasAutoExecuted by remember { mutableStateOf(false) }
             LaunchedEffect(loadingProgress) {
