@@ -24,11 +24,20 @@ import java.net.URI
 import java.util.Collections
 
 /**
- * WebView 请求拦截器（电脑模式专用）
- * 用于接管特定 XHR/Fetch POST 数据流
+ * WebView 请求拦截器
+ * 用于过滤特定指纹 Header (如 X-Requested-With) 并接管 XHR/Fetch POST 数据流
  */
 class WebViewRequestInterceptor {
     companion object {
+        private val ktorClientNoRedirects = HttpClient {
+            followRedirects = false
+            install(HttpTimeout) {
+                connectTimeoutMillis = 30_000
+                requestTimeoutMillis = 60_000
+                socketTimeoutMillis = 60_000
+            }
+        }
+
         private val ktorClientWithRedirects = HttpClient {
             followRedirects = true
             install(HttpTimeout) {
@@ -52,18 +61,22 @@ class WebViewRequestInterceptor {
     fun intercept(request: WebResourceRequest, isDesktopMode: Boolean): WebResourceResponse? {
         val rawUrl = request.url.toString()
 
-        // 1. 基础校验：只在 Desktop 模式且 http/https 请求下工作
-        if (!rawUrl.startsWith("http") || !isDesktopMode) return null
+        // 基础校验：只处理 http/https 请求
+        if (!rawUrl.startsWith("http")) return null
 
         val requestIdHeader = request.requestHeaders["X-WebView-Post-Id"]
         val requestIdParam = request.url.getQueryParameter("_webview_post_id")
         val requestId = requestIdHeader ?: requestIdParam
 
-        // 2. 关键过滤逻辑：
-        // 只有注册了 Post ID 的特定 XHR/Fetch 请求才由 Ktor 代理。
-        // 主框架页面导航、302 重定向、原生表单提交及常规静态资源均放行给 WebView 原生网络栈，
-        // 确保 Cookie 状态机强一致性与 Session 登录状态不丢失！
-        if (requestId == null) {
+        val isMainFrameGet = request.isForMainFrame && request.method.equals("GET", ignoreCase = true)
+        val hasPostId = requestId != null
+
+        // 关键过滤逻辑：
+        // 1. 如果是主页面导航 GET 请求，必须拦截并剔除 Android WebView 默认附带的 X-Requested-With 请求头，
+        //    防止教务系统将其误判为 Ajax 请求而返回 {"flag1":2,"msgContent":"请先登录系统"}。
+        // 2. 如果是注册了 POST ID 的 XHR/Fetch 请求，接管并转发数据。
+        // 3. 其他请求（普通图片/CSS/JS 以及传统的原生 POST 表单提交）放行给原生网络栈，确保登录表单与原生会话正常。
+        if (!isMainFrameGet && !hasPostId) {
             return null
         }
 
@@ -82,16 +95,17 @@ class WebViewRequestInterceptor {
             rawUrl
         }
 
-        val registeredData = postBodyRegistry.remove(requestId)
+        val registeredData = requestId?.let { postBodyRegistry.remove(it) }
 
-        // 如果不是 GET 且没有获取到 Body 数据，放回原生处理
         if (request.method.uppercase() != "GET" && registeredData == null) {
             return null
         }
 
+        val client = if (request.isForMainFrame) ktorClientNoRedirects else ktorClientWithRedirects
+
         try {
             return runBlocking {
-                val response = ktorClientWithRedirects.request {
+                val response = client.request {
                     this.url.takeFrom(url)
                     this.method = HttpMethod.parse(request.method)
 
@@ -107,13 +121,20 @@ class WebViewRequestInterceptor {
 
                     headers {
                         request.requestHeaders.forEach { (key, value) ->
-                            // 过滤指纹 Header 并剔除 Content-Length/Host 避免 Ktor 冲突
+                            // 剔除 X-Requested-With 防止被反爬或强智教务误判为异步 Ajax 请求
+                            // 剔除 Content-Length 与 Host 避免 Ktor 冲突
                             if (!key.equals("X-Requested-With", ignoreCase = true) &&
                                 !key.equals("X-WebView-Post-Id", ignoreCase = true) &&
                                 !key.equals("Content-Length", ignoreCase = true) &&
                                 !key.equals("Host", ignoreCase = true)) {
                                 append(key, value)
                             }
+                        }
+
+                        // 如果是电脑模式，确保 Header 中的 User-Agent 也使用桌面端 UA
+                        if (isDesktopMode) {
+                            remove(HttpHeaders.UserAgent)
+                            append(HttpHeaders.UserAgent, DESKTOP_USER_AGENT)
                         }
 
                         val cookies = cookieManager.getCookie(url)
@@ -131,19 +152,28 @@ class WebViewRequestInterceptor {
 
                 val statusCode = response.status.value
 
+                // 处理 3xx 重定向
                 if (statusCode in 300..399) {
-                    val location = response.headers[HttpHeaders.Location]
-                    if (location != null) {
-                        val absoluteLocation = resolveAbsoluteUrl(url, location)
-                        val html = "<html><script>window.location.replace('$absoluteLocation');</script></html>"
-                        return@runBlocking WebResourceResponse(
-                            "text/html",
-                            "UTF-8",
-                            200,
-                            "OK",
-                            mapOf("Cache-Control" to "no-cache"),
-                            html.byteInputStream()
-                        )
+                    if (request.isForMainFrame) {
+                        val location = response.headers[HttpHeaders.Location]
+                        if (location != null) {
+                            val absoluteLocation = resolveAbsoluteUrl(url, location)
+                            // 双向同步 Cookie 到目标 URL
+                            response.headers.getAll(HttpHeaders.SetCookie)?.forEach { cookieStr ->
+                                cookieManager.setCookie(absoluteLocation, cookieStr)
+                            }
+                            cookieManager.flush()
+
+                            val html = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0;url=$absoluteLocation\"></head><body><script>window.location.replace('$absoluteLocation');</script></body></html>"
+                            return@runBlocking WebResourceResponse(
+                                "text/html",
+                                "UTF-8",
+                                200,
+                                "OK",
+                                mapOf("Cache-Control" to "no-cache"),
+                                html.byteInputStream()
+                            )
+                        }
                     }
                     return@runBlocking null
                 }
@@ -170,9 +200,43 @@ class WebViewRequestInterceptor {
                     }
                 }
 
+                // 防呆拦截：如果强智教务由于某种原因返回了 {"flag1":2,"msgContent":"请先登录系统"} 的纯文本/JSON，
+                // 且当前是主页面导航，自动将其重定向到该系统的统一登录页面 /jsxsd/
+                if (request.isForMainFrame && url.contains("/jsxsd/")) {
+                    val responseBytes = response.bodyAsChannel().toInputStream().readBytes()
+                    val responseStr = String(responseBytes, Charsets.UTF_8)
+                    if (responseStr.contains("\"flag1\":2") || responseStr.contains("\"flag\":2")) {
+                        val loginUrl = resolveAbsoluteUrl(url, "/jsxsd/")
+                        val redirectHtml = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0;url=$loginUrl\"></head><body><script>window.location.replace('$loginUrl');</script></body></html>"
+                        return@runBlocking WebResourceResponse(
+                            "text/html",
+                            "UTF-8",
+                            200,
+                            "OK",
+                            mapOf("Cache-Control" to "no-cache"),
+                            redirectHtml.byteInputStream()
+                        )
+                    }
+
+                    val responseHeadersMap = mutableMapOf<String, String>()
+                    response.headers.forEach { name, values ->
+                        if (!name.equals("Content-Encoding", ignoreCase = true)) {
+                            responseHeadersMap[name] = values.joinToString(", ")
+                        }
+                    }
+
+                    return@runBlocking WebResourceResponse(
+                        mimeType,
+                        encoding,
+                        statusCode,
+                        response.status.description.ifBlank { "OK" },
+                        responseHeadersMap,
+                        responseBytes.inputStream()
+                    )
+                }
+
                 val responseHeadersMap = mutableMapOf<String, String>()
                 response.headers.forEach { name, values ->
-                    // 剔除 Content-Encoding，防止底层自动解压后 WebView 重复解压导致乱码
                     if (!name.equals("Content-Encoding", ignoreCase = true)) {
                         responseHeadersMap[name] = values.joinToString(", ")
                     }
